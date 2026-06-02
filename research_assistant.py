@@ -18,8 +18,8 @@ Key LangChain Concepts Demonstrated:
 
 import os
 import logging
-from typing import Any
 from dotenv import load_dotenv
+from opentelemetry import trace
 
 # Import LangChain components
 from langchain_openai import ChatOpenAI
@@ -27,6 +27,8 @@ from langchain.tools import Tool
 from langchain.agents import initialize_agent, AgentType
 from langchain.memory import ConversationBufferMemory
 import wikipedia
+
+from tracing import setup_tracing
 
 # Load environment variables from .env file
 load_dotenv()
@@ -48,29 +50,39 @@ logger = logging.getLogger(__name__)
 def wikipedia_search(query: str) -> str:
     """
     Search Wikipedia for information about a topic.
-    
+
     Args:
         query: The search term to look up on Wikipedia
-        
+
     Returns:
         A summary of the Wikipedia article or an error message
     """
-    try:
-        logger.info(f"Searching Wikipedia for: {query}")
-        # Set the number of sentences in the summary
-        result = wikipedia.summary(query, sentences=3)
-        return result
-    except wikipedia.exceptions.DisambiguationError as e:
-        # Handle cases where Wikipedia returns multiple possible matches
-        options = e.options[:3]  # Get first 3 options
-        return f"Multiple results found. Try: {', '.join(options)}"
-    except wikipedia.exceptions.PageError:
-        # Handle case where page is not found
-        return f"No Wikipedia page found for '{query}'"
-    except Exception as e:
-        # Handle any other errors
-        logger.error(f"Error searching Wikipedia: {str(e)}")
-        return f"Error searching Wikipedia: {str(e)}"
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("wikipedia.search") as span:
+        span.set_attribute("wikipedia.query", query)
+        try:
+            logger.info(f"Searching Wikipedia for: {query}")
+            # Set the number of sentences in the summary
+            result = wikipedia.summary(query, sentences=3)
+            span.set_attribute("wikipedia.result_length", len(result))
+            return result
+        except wikipedia.exceptions.DisambiguationError as e:
+            # Handle cases where Wikipedia returns multiple possible matches
+            options = e.options[:3]  # Get first 3 options
+            msg = f"Multiple results found. Try: {', '.join(options)}"
+            span.set_attribute("wikipedia.disambiguation", True)
+            return msg
+        except wikipedia.exceptions.PageError:
+            # Handle case where page is not found
+            msg = f"No Wikipedia page found for '{query}'"
+            span.set_status(trace.StatusCode.ERROR, msg)
+            return msg
+        except Exception as e:
+            # Handle any other errors
+            logger.error(f"Error searching Wikipedia: {str(e)}")
+            span.record_exception(e)
+            span.set_status(trace.StatusCode.ERROR, str(e))
+            return f"Error searching Wikipedia: {str(e)}"
 
 
 # Create a Tool object that LangChain can use
@@ -94,7 +106,7 @@ wikipedia_tool = Tool(
 def initialize_llm():
     """
     Create and configure the OpenAI language model.
-    
+
     Returns:
         ChatOpenAI: Configured LLM instance
     """
@@ -104,17 +116,17 @@ def initialize_llm():
             "OPENAI_API_KEY not found in environment variables. "
             "Please set it in your .env file."
         )
-    
+
     model_name = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-    
+
     logger.info(f"Initializing LLM with model: {model_name}")
-    
+
     llm = ChatOpenAI(
         model_name=model_name,
         temperature=0.7,  # Controls randomness (0 = deterministic, 1 = random)
         api_key=api_key
     )
-    
+
     return llm
 
 
@@ -126,17 +138,17 @@ def initialize_llm():
 def initialize_memory():
     """
     Create conversation memory to maintain context across turns.
-    
+
     Returns:
         ConversationBufferMemory: Memory object for storing conversation history
     """
     logger.info("Initializing conversation memory")
-    
+
     memory = ConversationBufferMemory(
         memory_key="chat_history",  # Key to access the memory in prompts
         return_messages=True  # Return message objects instead of strings
     )
-    
+
     return memory
 
 
@@ -148,21 +160,21 @@ def initialize_memory():
 def create_research_agent(llm, memory, tools):
     """
     Initialize a research agent with tools and memory.
-    
+
     Args:
         llm: The language model to use
         memory: Conversation memory object
         tools: List of tools the agent can use
-        
+
     Returns:
         Agent: Configured agent instance
     """
     logger.info("Creating research agent")
-    
+
     # AGENT TYPES EXPLAINED:
     # - ZERO_SHOT_REACT_DESCRIPTION: Agent decides on its own (no memory)
     # - CHAT_CONVERSATIONAL_REACT_DESCRIPTION: Includes conversation history
-    
+
     agent = initialize_agent(
         tools=tools,
         llm=llm,
@@ -171,7 +183,7 @@ def create_research_agent(llm, memory, tools):
         verbose=True,  # Set to True to see the agent's reasoning
         handle_parsing_errors=True  # Gracefully handle errors
     )
-    
+
     return agent
 
 
@@ -184,74 +196,95 @@ def run_research_assistant():
     Main function to run the research assistant in a loop.
     """
     print("\n" + "="*70)
-    print("🔍 Multi-Step Research Assistant")
+    print("\U0001f50d Multi-Step Research Assistant")
     print("Powered by LangChain + OpenAI + Wikipedia")
     print("="*70)
     print("\nThis assistant will research topics using Wikipedia")
     print("and synthesize information using AI.")
     print("\nType 'quit' or 'exit' to stop.\n")
-    
+
+    # -------------------------------------------------------------------------
+    # Initialize Dynatrace OpenTelemetry tracing.
+    # If DT_API_URL / DT_API_TOKEN are not set we log a warning and continue
+    # without tracing so the app remains fully functional in environments
+    # that don't have Dynatrace configured.
+    # -------------------------------------------------------------------------
+    try:
+        setup_tracing()
+        logger.info("Dynatrace OpenTelemetry tracing initialized")
+    except ValueError as e:
+        logger.warning(f"Tracing not configured: {e}. Continuing without Dynatrace tracing.")
+
     try:
         # Initialize components
         logger.info("Initializing research assistant components")
         llm = initialize_llm()
         memory = initialize_memory()
         tools = [wikipedia_tool]
-        
+
         # Create the agent
         agent = create_research_agent(llm, memory, tools)
-        
+
         logger.info("Research assistant initialized successfully")
-        
+
+        tracer = trace.get_tracer(__name__)
+
         # Research loop
         while True:
             # Get user input
-            user_query = input("\n📝 Enter your research topic or question: ").strip()
-            
+            user_query = input("\n\U0001f4dd Enter your research topic or question: ").strip()
+
             # Check for exit commands
             if user_query.lower() in ["quit", "exit", "q"]:
-                print("\n👋 Thank you for using the Research Assistant!")
+                print("\n\U0001f44b Thank you for using the Research Assistant!")
                 break
-            
+
             # Validate input
             if not user_query:
-                print("⚠️  Please enter a valid research topic.")
+                print("\u26a0\ufe0f  Please enter a valid research topic.")
                 continue
-            
-            print("\n🤔 Researching...\n")
-            
-            try:
-                # Run the agent with the user's query
-                # The agent will:
-                # 1. Decide if it needs to search Wikipedia
-                # 2. Potentially search Wikipedia multiple times
-                # 3. Synthesize information into an answer
-                result = agent.run(user_query)
-                
-                print("\n" + "-"*70)
-                print("📊 Research Results:")
-                print("-"*70)
-                print(result)
-                print("-"*70)
-                
-            except Exception as e:
-                logger.error(f"Error during research: {str(e)}")
-                print(f"\n❌ Error during research: {str(e)}")
-                print("Please try again with a different topic.")
-    
+
+            print("\n\U0001f914 Researching...\n")
+
+            # Each user query is traced as a top-level span. Child spans from
+            # wikipedia_search() are automatically nested inside it.
+            with tracer.start_as_current_span("research_assistant.query") as span:
+                span.set_attribute("research.query", user_query)
+                try:
+                    # Run the agent with the user's query
+                    # The agent will:
+                    # 1. Decide if it needs to search Wikipedia
+                    # 2. Potentially search Wikipedia multiple times
+                    # 3. Synthesize information into an answer
+                    result = agent.run(user_query)
+                    span.set_attribute("research.result_length", len(result))
+
+                    print("\n" + "-"*70)
+                    print("\U0001f4ca Research Results:")
+                    print("-"*70)
+                    print(result)
+                    print("-"*70)
+
+                except Exception as e:
+                    logger.error(f"Error during research: {str(e)}")
+                    span.record_exception(e)
+                    span.set_status(trace.StatusCode.ERROR, str(e))
+                    print(f"\n\u274c Error during research: {str(e)}")
+                    print("Please try again with a different topic.")
+
     except ValueError as e:
-        print(f"\n❌ Configuration Error: {str(e)}")
+        print(f"\n\u274c Configuration Error: {str(e)}")
         print("\nPlease ensure:")
         print("1. You have created a .env file (copy from .env.example)")
         print("2. You've added your OpenAI API key to .env")
         print("3. You've run: pip install -r requirements.txt")
-    
+
     except KeyboardInterrupt:
-        print("\n\n👋 Research assistant stopped by user.")
-    
+        print("\n\n\U0001f44b Research assistant stopped by user.")
+
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-        print(f"\n❌ Unexpected error: {str(e)}")
+        print(f"\n\u274c Unexpected error: {str(e)}")
 
 
 # ============================================================================
