@@ -249,6 +249,10 @@ async def chat(request: Request, request_body: ChatRequest):
     """Handle chat message; create or reuse session."""
     session_id = request_body.session_id or str(uuid4())
 
+    # Set session_id as span attribute for Dynatrace correlation
+    span = trace.get_current_span()
+    span.set_attribute("session_id", session_id)
+
     # Get or create session
     if session_id not in sessions:
         logger.debug(
