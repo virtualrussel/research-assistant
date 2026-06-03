@@ -9,6 +9,7 @@ A LangChain-powered research assistant that uses OpenAI and Wikipedia to researc
 - 🧠 **LLM-powered analysis** - Uses OpenAI to synthesize and summarize findings
 - 💾 **Memory** - Maintains context across research steps
 - 🔗 **Agent-based** - Uses LangChain agents to autonomously decide next steps
+- 📈 **Dynatrace AI observability** - Exports manual traces and LangChain-aware AI telemetry to Dynatrace
 
 ## How It Works
 
@@ -22,6 +23,7 @@ A LangChain-powered research assistant that uses OpenAI and Wikipedia to researc
 
 - Python 3.9+
 - OpenAI API key
+- Optional: Dynatrace OTLP endpoint and API token for tracing
 - GitHub Codespaces (or local environment with Python installed)
 
 ## Setup Instructions
@@ -81,6 +83,22 @@ A LangChain-powered research assistant that uses OpenAI and Wikipedia to researc
    python research_assistant.py
    ```
 
+## Dynatrace AI Observability Setup
+
+To enable full tracing visibility for manual application spans and LangChain / LLM execution, set the following variables in your `.env` file:
+
+```dotenv
+DT_API_URL=https://<your-env>.live.dynatrace.com/api/v2/otlp
+DT_API_TOKEN=your_dynatrace_api_token_here
+```
+
+Notes:
+
+- `DT_API_URL` should be the Dynatrace OTLP **base endpoint**.
+- Standard OpenTelemetry spans are exported to `DT_API_URL + /v1/traces`.
+- Traceloop / OpenLLMetry uses the base OTLP endpoint directly.
+- If Dynatrace variables are not set, the assistant continues running without tracing.
+
 ## Getting an OpenAI API Key
 
 1. Visit https://platform.openai.com/account/api-keys
@@ -101,6 +119,12 @@ The agent will then:
 2. Analyze and summarize the findings
 3. Provide a comprehensive answer with sources
 
+With Dynatrace tracing enabled, each query also emits:
+- a top-level research workflow span
+- LangChain / LLM spans captured through Traceloop
+- tool spans for Wikipedia searches
+- manual custom spans with query/result metadata
+
 ## LangChain Components Used
 
 - **Agents** - Autonomous decision-making about what steps to take
@@ -119,7 +143,8 @@ research-assistant/
 ├── .gitignore                 # Git ignore rules
 ├── .devcontainer/
 │   └── devcontainer.json      # GitHub Codespaces config
-└── research_assistant.py      # Main agent code
+├── research_assistant.py      # Main agent code
+└── tracing.py                 # Dynatrace / OpenTelemetry setup
 ```
 
 ## Learning Resources
@@ -128,15 +153,25 @@ research-assistant/
 - [LangChain Agents](https://python.langchain.com/docs/modules/agents/)
 - [OpenAI API Documentation](https://platform.openai.com/docs)
 - [Wikipedia API](https://www.mediawiki.org/wiki/API)
+- [Dynatrace AI Observability](https://docs.dynatrace.com/docs/observe/dynatrace-for-ai-observability/get-started/openllmetry)
 
 ## Troubleshooting
 
 ### "ModuleNotFoundError: No module named 'langchain'"
 - Make sure you've run `pip install -r requirements.txt`
 
+### "ModuleNotFoundError: No module named 'traceloop'"
+- Reinstall dependencies with `pip install -r requirements.txt`
+- Confirm your virtual environment is activated
+
 ### "OpenAI API key not found"
 - Check your `.env` file has `OPENAI_API_KEY=your_key_here`
 - Make sure you've restarted the script after updating `.env`
+
+### "Tracing not configured"
+- Check that `DT_API_URL` and `DT_API_TOKEN` are set in `.env`
+- Confirm `DT_API_URL` is the base Dynatrace OTLP endpoint, not `/v1/traces`
+- Verify the Dynatrace API token has trace ingest permissions
 
 ### "No Wikipedia results found"
 - Try a more general search term
