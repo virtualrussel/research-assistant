@@ -6,3 +6,4 @@ wikipedia==1.4.0
 python-dotenv==1.0.0
 opentelemetry-sdk>=1.42.0,<2.0.0
 opentelemetry-exporter-otlp-proto-http>=1.42.0,<2.0.0
+traceloop-sdk>=0.40.4,<1.0.0
