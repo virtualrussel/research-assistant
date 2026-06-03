@@ -8,32 +8,29 @@
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>🔍 Research Assistant</h1>
-            <p>Powered by LangChain + OpenAI + Wikipedia</p>
-        </header>
-
         <main>
+            <div class="greeting">Good afternoon</div>
+
             <div id="chat-container" class="chat-container">
                 <div id="history" class="chat-history"></div>
+                <div id="status" class="status"></div>
+
                 <div class="input-group">
                     <input
                         id="query-input"
                         type="text"
                         class="query-input"
-                        placeholder="Enter your research query..."
+                        placeholder="How can I help you today?"
                         autocomplete="off"
                     >
-                    <button id="submit-btn" class="submit-btn">Send</button>
+                    <button id="submit-btn" class="submit-btn">↑</button>
                 </div>
             </div>
-
-            <div id="status" class="status"></div>
         </main>
 
         <footer>
-            <p>Session ID: <code id="session-id"></code></p>
-            <p><a href="/docs" target="_blank">API Documentation</a></p>
+            <code id="session-id" style="display:none;"></code>
+            <a href="/docs" target="_blank">API</a>
         </footer>
     </div>
 
