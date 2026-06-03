@@ -201,7 +201,7 @@ def create_research_agent(llm, memory, tools, verbose=True):
     return agent
 
 
-def initialize_agent():
+def create_agent_for_session():
     """
     Initialize and return a fully configured LangChain agent and memory.
     For HTTP service, verbose=False (logs via structured logging instead).
