@@ -174,7 +174,7 @@ def initialize_memory():
 # ============================================================================
 # The agent combines the LLM, tools, and memory to make autonomous decisions.
 
-def create_research_agent(llm, memory, tools):
+def create_research_agent(llm, memory, tools, verbose=True):
     """
     Initialize a research agent with tools and memory.
 
@@ -182,6 +182,7 @@ def create_research_agent(llm, memory, tools):
         llm: The language model to use
         memory: Conversation memory object
         tools: List of tools the agent can use
+        verbose: Whether to print step-by-step reasoning
 
     Returns:
         Agent: Configured agent instance
@@ -193,22 +194,56 @@ def create_research_agent(llm, memory, tools):
         llm=llm,
         agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION,
         memory=memory,
-        verbose=True,
+        verbose=verbose,
         handle_parsing_errors=True
     )
 
     return agent
 
 
+def initialize_agent():
+    """
+    Initialize and return a fully configured LangChain agent and memory.
+    For HTTP service, verbose=False (logs via structured logging instead).
+
+    Returns:
+        tuple: (Agent, ConversationBufferMemory)
+    """
+    logger.info("Initializing agent and memory")
+    llm = initialize_llm()
+    memory = initialize_memory()
+    tools = [wikipedia_tool]
+    agent = create_research_agent(llm, memory, tools, verbose=False)
+    return agent, memory
+
+
 @task(name="run_agent_query")
 def run_agent_query(agent, user_query: str) -> str:
-    """Run the LangChain agent for a single user query."""
+    """
+    Run the LangChain agent for a single user query.
+
+    Args:
+        agent: LangChain agent instance
+        user_query: User's research query
+
+    Returns:
+        str: Agent's response
+    """
     return agent.run(user_query)
 
 
 @workflow(name="research_query_workflow")
 def handle_research_query(agent, user_query: str) -> str:
-    """Trace and execute a single research query workflow."""
+    """
+    Trace and execute a single research query workflow.
+
+    Args:
+        agent: LangChain agent instance
+        user_query: User's research query
+
+    Returns:
+        str: Agent's response
+    """
     tracer = trace.get_tracer(__name__)
     with tracer.start_as_current_span("research_assistant.query") as span:
         span.set_attribute("research.query", user_query)
@@ -307,4 +342,12 @@ def run_research_assistant():
 # ============================================================================
 
 if __name__ == "__main__":
-    run_research_assistant()
+    run_mode = os.getenv("RUN_MODE", "http").lower()
+    if run_mode == "cli":
+        run_research_assistant()
+    elif run_mode == "http":
+        logger.info("HTTP mode selected; FastAPI should be started via uvicorn or app.py")
+        print("This module is imported by app.py for HTTP mode.")
+        print("To run CLI mode, use: RUN_MODE=cli python research_assistant.py")
+    else:
+        raise ValueError(f"Unknown RUN_MODE: {run_mode}. Use 'cli' or 'http'.")

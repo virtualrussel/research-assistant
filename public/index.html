@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Assistant</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Research Assistant</h1>
+            <p>Powered by LangChain + OpenAI + Wikipedia</p>
+        </header>
+
+        <main>
+            <div id="chat-container" class="chat-container">
+                <div id="history" class="chat-history"></div>
+                <div class="input-group">
+                    <input
+                        id="query-input"
+                        type="text"
+                        class="query-input"
+                        placeholder="Enter your research query..."
+                        autocomplete="off"
+                    >
+                    <button id="submit-btn" class="submit-btn">Send</button>
+                </div>
+            </div>
+
+            <div id="status" class="status"></div>
+        </main>
+
+        <footer>
+            <p>Session ID: <code id="session-id"></code></p>
+            <p><a href="/docs" target="_blank">API Documentation</a></p>
+        </footer>
+    </div>
+
+    <script src="index.js"></script>
+</body>
+</html>
