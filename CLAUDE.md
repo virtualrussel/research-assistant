@@ -22,7 +22,7 @@ There is no build step, no test suite, and no linter config. The devcontainer us
 
 The project has two modules:
 
-**`tracing.py`** — configures both the global `TracerProvider` and `MeterProvider` for Dynatrace export, then initializes Traceloop (OpenLLMetry) for automatic LangChain/LLM span capture. Key ordering constraint: `Traceloop.init()` is called first (it sets the `TracerProvider` using the pre-built `OTLPSpanExporter`), then `otel_metrics.set_meter_provider()` is called to take ownership of the metrics pipeline regardless of what Traceloop configured internally. Traces export to `DT_API_URL/v1/traces`; metrics export to `DT_API_URL/v1/metrics`. If env vars are missing, `setup_tracing()` raises `ValueError`.
+**`tracing.py`** — configures both the global `TracerProvider` and `MeterProvider` for Dynatrace export, then initializes Traceloop (OpenLLMetry) for automatic LangChain/LLM span capture. `Traceloop.init()` is called with `api_endpoint=` so it creates its own `OTLPSpanExporter` and enables its LLM metrics instrumentation pipeline. `otel_metrics.set_meter_provider()` is then called immediately after to take ownership of the metrics pipeline with our explicitly configured exporter. Traces export to `DT_API_URL/v1/traces`; metrics export to `DT_API_URL/v1/metrics`. If env vars are missing, `setup_tracing()` raises `ValueError`.
 
 **`research_assistant.py`** — initializes a LangChain `CHAT_CONVERSATIONAL_REACT_DESCRIPTION` agent with a single `wikipedia_search` tool and `ConversationBufferMemory`. The agent autonomously decides when and what to search. Two instrumented entry points wrap queries:
 - `run_agent_query()` — decorated `@task`, handles the direct agent invocation
