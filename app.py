@@ -257,7 +257,7 @@ async def chat(request: Request, request_body: ChatRequest):
         )
 
         try:
-            from research_assistant import initialize_agent
+            from research_assistant import create_agent_for_session
             agent, memory = create_agent_for_session()
             sessions[session_id] = {
                 "agent": agent,
