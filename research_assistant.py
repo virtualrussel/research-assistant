@@ -16,19 +16,38 @@ Key LangChain Concepts Demonstrated:
 - Chains: Multi-step processing
 """
 
-import os
 import logging
-from dotenv import load_dotenv
-from opentelemetry import trace
+import os
 
-# Import LangChain components
-from langchain_openai import ChatOpenAI
-from langchain.tools import Tool
-from langchain.agents import initialize_agent, AgentType
-from langchain.memory import ConversationBufferMemory
 import wikipedia
+from dotenv import load_dotenv
+from langchain.agents import AgentType, initialize_agent
+from langchain.memory import ConversationBufferMemory
+from langchain.tools import Tool
+from langchain_openai import ChatOpenAI
+from opentelemetry import trace
+from opentelemetry.trace.status import Status, StatusCode
 
 from tracing import setup_tracing
+
+try:
+    from traceloop.sdk.decorators import task, tool, workflow
+except ImportError:
+    def workflow(name=None):
+        def decorator(func):
+            return func
+        return decorator
+
+    def task(name=None):
+        def decorator(func):
+            return func
+        return decorator
+
+    def tool(name=None):
+        def decorator(func):
+            return func
+        return decorator
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -47,6 +66,7 @@ logger = logging.getLogger(__name__)
 # Tools are functions that the agent can call to gather information.
 # We're creating a Wikipedia search tool.
 
+@tool(name="wikipedia_search")
 def wikipedia_search(query: str) -> str:
     """
     Search Wikipedia for information about a topic.
@@ -62,26 +82,23 @@ def wikipedia_search(query: str) -> str:
         span.set_attribute("wikipedia.query", query)
         try:
             logger.info(f"Searching Wikipedia for: {query}")
-            # Set the number of sentences in the summary
             result = wikipedia.summary(query, sentences=3)
             span.set_attribute("wikipedia.result_length", len(result))
             return result
         except wikipedia.exceptions.DisambiguationError as e:
-            # Handle cases where Wikipedia returns multiple possible matches
-            options = e.options[:3]  # Get first 3 options
+            options = e.options[:3]
             msg = f"Multiple results found. Try: {', '.join(options)}"
             span.set_attribute("wikipedia.disambiguation", True)
+            span.set_status(Status(StatusCode.ERROR, msg))
             return msg
         except wikipedia.exceptions.PageError:
-            # Handle case where page is not found
             msg = f"No Wikipedia page found for '{query}'"
-            span.set_status(trace.StatusCode.ERROR, msg)
+            span.set_status(Status(StatusCode.ERROR, msg))
             return msg
         except Exception as e:
-            # Handle any other errors
             logger.error(f"Error searching Wikipedia: {str(e)}")
             span.record_exception(e)
-            span.set_status(trace.StatusCode.ERROR, str(e))
+            span.set_status(Status(StatusCode.ERROR, str(e)))
             return f"Error searching Wikipedia: {str(e)}"
 
 
@@ -123,7 +140,7 @@ def initialize_llm():
 
     llm = ChatOpenAI(
         model_name=model_name,
-        temperature=0.7,  # Controls randomness (0 = deterministic, 1 = random)
+        temperature=0.7,
         api_key=api_key
     )
 
@@ -145,8 +162,8 @@ def initialize_memory():
     logger.info("Initializing conversation memory")
 
     memory = ConversationBufferMemory(
-        memory_key="chat_history",  # Key to access the memory in prompts
-        return_messages=True  # Return message objects instead of strings
+        memory_key="chat_history",
+        return_messages=True
     )
 
     return memory
@@ -171,20 +188,44 @@ def create_research_agent(llm, memory, tools):
     """
     logger.info("Creating research agent")
 
-    # AGENT TYPES EXPLAINED:
-    # - ZERO_SHOT_REACT_DESCRIPTION: Agent decides on its own (no memory)
-    # - CHAT_CONVERSATIONAL_REACT_DESCRIPTION: Includes conversation history
-
     agent = initialize_agent(
         tools=tools,
         llm=llm,
         agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION,
         memory=memory,
-        verbose=True,  # Set to True to see the agent's reasoning
-        handle_parsing_errors=True  # Gracefully handle errors
+        verbose=True,
+        handle_parsing_errors=True
     )
 
     return agent
+
+
+@task(name="run_agent_query")
+def run_agent_query(agent, user_query: str) -> str:
+    """Run the LangChain agent for a single user query."""
+    return agent.run(user_query)
+
+
+@workflow(name="research_query_workflow")
+def handle_research_query(agent, user_query: str) -> str:
+    """Trace and execute a single research query workflow."""
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("research_assistant.query") as span:
+        span.set_attribute("research.query", user_query)
+        span.set_attribute(
+            "research.model",
+            os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+        )
+
+        try:
+            result = run_agent_query(agent, user_query)
+            span.set_attribute("research.result_length", len(result))
+            return result
+        except Exception as e:
+            logger.error(f"Error during research: {str(e)}")
+            span.record_exception(e)
+            span.set_status(Status(StatusCode.ERROR, str(e)))
+            raise
 
 
 # ============================================================================
@@ -195,82 +236,56 @@ def run_research_assistant():
     """
     Main function to run the research assistant in a loop.
     """
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("\U0001f50d Multi-Step Research Assistant")
     print("Powered by LangChain + OpenAI + Wikipedia")
-    print("="*70)
+    print("=" * 70)
     print("\nThis assistant will research topics using Wikipedia")
     print("and synthesize information using AI.")
     print("\nType 'quit' or 'exit' to stop.\n")
 
-    # -------------------------------------------------------------------------
-    # Initialize Dynatrace OpenTelemetry tracing.
-    # If DT_API_URL / DT_API_TOKEN are not set we log a warning and continue
-    # without tracing so the app remains fully functional in environments
-    # that don't have Dynatrace configured.
-    # -------------------------------------------------------------------------
     try:
         setup_tracing()
         logger.info("Dynatrace OpenTelemetry tracing initialized")
     except ValueError as e:
-        logger.warning(f"Tracing not configured: {e}. Continuing without Dynatrace tracing.")
+        logger.warning(
+            f"Tracing not configured: {e}. Continuing without Dynatrace tracing."
+        )
 
     try:
-        # Initialize components
         logger.info("Initializing research assistant components")
         llm = initialize_llm()
         memory = initialize_memory()
         tools = [wikipedia_tool]
-
-        # Create the agent
         agent = create_research_agent(llm, memory, tools)
 
         logger.info("Research assistant initialized successfully")
 
-        tracer = trace.get_tracer(__name__)
-
-        # Research loop
         while True:
-            # Get user input
             user_query = input("\n\U0001f4dd Enter your research topic or question: ").strip()
 
-            # Check for exit commands
             if user_query.lower() in ["quit", "exit", "q"]:
                 print("\n\U0001f44b Thank you for using the Research Assistant!")
                 break
 
-            # Validate input
             if not user_query:
                 print("\u26a0\ufe0f  Please enter a valid research topic.")
                 continue
 
             print("\n\U0001f914 Researching...\n")
 
-            # Each user query is traced as a top-level span. Child spans from
-            # wikipedia_search() are automatically nested inside it.
-            with tracer.start_as_current_span("research_assistant.query") as span:
-                span.set_attribute("research.query", user_query)
-                try:
-                    # Run the agent with the user's query
-                    # The agent will:
-                    # 1. Decide if it needs to search Wikipedia
-                    # 2. Potentially search Wikipedia multiple times
-                    # 3. Synthesize information into an answer
-                    result = agent.run(user_query)
-                    span.set_attribute("research.result_length", len(result))
+            try:
+                result = handle_research_query(agent, user_query)
 
-                    print("\n" + "-"*70)
-                    print("\U0001f4ca Research Results:")
-                    print("-"*70)
-                    print(result)
-                    print("-"*70)
+                print("\n" + "-" * 70)
+                print("\U0001f4ca Research Results:")
+                print("-" * 70)
+                print(result)
+                print("-" * 70)
 
-                except Exception as e:
-                    logger.error(f"Error during research: {str(e)}")
-                    span.record_exception(e)
-                    span.set_status(trace.StatusCode.ERROR, str(e))
-                    print(f"\n\u274c Error during research: {str(e)}")
-                    print("Please try again with a different topic.")
+            except Exception as e:
+                print(f"\n\u274c Error during research: {str(e)}")
+                print("Please try again with a different topic.")
 
     except ValueError as e:
         print(f"\n\u274c Configuration Error: {str(e)}")
