@@ -17,9 +17,16 @@ import os
 from opentelemetry import metrics as otel_metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.metrics import Histogram
+from opentelemetry.metrics import (
+    Counter,
+    Histogram,
+    ObservableCounter,
+    ObservableGauge,
+    ObservableUpDownCounter,
+    UpDownCounter,
+)
 from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.export import AggregationTemporality, PeriodicExportingMetricReader
 from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -96,9 +103,20 @@ def setup_tracing(service_name: str = "research-assistant") -> None:
     # use ExplicitBucketHistogramAggregation — Dynatrace's OTLP ingestion
     # rejects ExponentialHistogram, which some OTel instrumentations emit by
     # default.
+    # Dynatrace rejects CUMULATIVE monotonic sums (UNSUPPORTED_METRIC_TYPE_MONOTONIC_CUMULATIVE_SUM).
+    # The OTel HTTP exporter defaults to CUMULATIVE, so we override to DELTA for all
+    # sum and histogram instruments. Gauges remain CUMULATIVE (instantaneous value semantics).
     metric_exporter = OTLPMetricExporter(
         endpoint=f"{base_url}/v1/metrics",
         headers=auth_headers,
+        preferred_temporality={
+            Counter: AggregationTemporality.DELTA,
+            UpDownCounter: AggregationTemporality.DELTA,
+            Histogram: AggregationTemporality.DELTA,
+            ObservableCounter: AggregationTemporality.DELTA,
+            ObservableUpDownCounter: AggregationTemporality.DELTA,
+            ObservableGauge: AggregationTemporality.CUMULATIVE,
+        },
     )
     meter_provider = MeterProvider(
         resource=resource,
