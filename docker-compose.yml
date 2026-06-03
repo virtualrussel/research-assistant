@@ -20,3 +20,17 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  oneagent:
+    image: dynatrace/oneagent:latest
+    container_name: oneagent
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DT_API_URL: ${DT_API_URL}
+      DT_API_TOKEN: ${DT_API_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
