@@ -1,13 +1,13 @@
 """
-Dynatrace OpenTelemetry tracing and metrics setup.
+OpenTelemetry tracing and metrics setup via OTLP HTTP.
 
-Exports traces and metrics to Dynatrace via OTLP HTTP and enables
+Exports traces and metrics to an OTLP-compatible backend and enables
 Traceloop / OpenLLMetry instrumentation for LangChain and OpenAI.
 
 Required environment variables:
-    DT_API_URL   - Dynatrace OTLP base endpoint, e.g.
+    DT_API_URL   - OTLP base endpoint (no trailing slash), e.g.
                    https://<env>.live.dynatrace.com/api/v2/otlp
-    DT_API_TOKEN - Dynatrace API token with openTelemetryTrace.ingest
+    DT_API_TOKEN - API token with openTelemetryTrace.ingest
                    and metrics.ingest scopes
 """
 
@@ -32,8 +32,8 @@ _TRACING_INITIALIZED = False
 
 def setup_tracing(service_name: str = "research-assistant") -> None:
     """
-    Configure OpenTelemetry traces and metrics with Dynatrace as the backend
-    and initialize Traceloop/OpenLLMetry for LangChain and OpenAI instrumentation.
+    Configure OpenTelemetry traces and metrics via OTLP HTTP and initialize
+    Traceloop/OpenLLMetry for LangChain and OpenAI instrumentation.
 
     When Traceloop is available, it owns both the TracerProvider and MeterProvider.
     The DELTA temporality env var is set before Traceloop.init() so its internally

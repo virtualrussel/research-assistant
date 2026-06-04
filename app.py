@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pythonjsonlogger import jsonlogger
 from opentelemetry import trace
@@ -150,9 +151,9 @@ async def startup():
     try:
         from research_assistant import setup_tracing
         setup_tracing(service_name="research-assistant-api")
-        logger.info("Dynatrace OpenTelemetry tracing initialized")
+        logger.info("OpenTelemetry tracing initialized")
     except ValueError as e:
-        logger.warning(f"Tracing not configured: {e}. Continuing without Dynatrace.")
+        logger.warning(f"Tracing not configured: {e}. Continuing without tracing.")
     except Exception as e:
         logger.error(f"Error initializing tracing: {e}", exc_info=True)
         # Don't fail startup; continue without tracing
@@ -395,15 +396,6 @@ async def health():
     return HealthResponse(status="ok", sessions_active=len(sessions))
 
 
-# ============================================================================
-# Root Endpoint (Redirect to Docs)
-# ============================================================================
-
-@app.get("/")
-async def root():
-    """Root endpoint; redirect to API documentation."""
-    return {
-        "message": "Research Assistant API",
-        "docs": "/docs",
-        "openapi": "/openapi.json"
-    }
+# Serve the web UI — must be mounted after all API routes so API routes
+# take precedence over the catch-all static file handler.
+app.mount("/", StaticFiles(directory="public", html=True), name="static")

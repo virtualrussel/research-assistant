@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Purpose
 
-This is a practice project for learning how to instrument a Python front-end that uses LangChain and OpenAI. The research assistant application itself is the vehicle — the real focus is on getting OpenTelemetry (manual spans) and OpenLLMetry/Traceloop (automatic LangChain/LLM instrumentation) data flowing correctly into Dynatrace. Work here should prioritise correct, observable instrumentation over extending the assistant's research capabilities.
+A research assistant web application backed by LangChain, OpenAI, and Wikipedia. The assistant takes research questions via a browser UI, autonomously searches Wikipedia, and synthesizes findings into comprehensive responses using OpenAI.
+
+OpenTelemetry (manual spans) and OpenLLMetry/Traceloop (automatic LangChain and LLM instrumentation) are baked in throughout. The primary deliverable is a functional, working assistant. Getting telemetry flowing correctly to Dynatrace is part of the project but not at the expense of the assistant itself.
 
 ## Setup
 
@@ -20,15 +22,19 @@ There is no build step, no test suite, and no linter config. The devcontainer us
 
 ## Architecture
 
-The project has two modules:
+**`app.py`** — FastAPI service. Handles HTTP requests, session management, and request logging with trace context. On startup, initialises tracing then starts a background session cleanup task. Serves the web UI from `public/` via a StaticFiles mount at `/` (added last so API routes take precedence). Offloads synchronous LangChain calls to a thread pool via `asyncio.to_thread`.
 
-**`tracing.py`** — sets `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta` then calls `Traceloop.init()` with `api_endpoint=`. Traceloop owns both the `TracerProvider` and `MeterProvider`; the OTel SDK prevents overriding the `MeterProvider` once set, so the metrics pipeline belongs entirely to Traceloop. The DELTA env var must be set before `Traceloop.init()` so Traceloop's internally created `OTLPMetricExporter` also picks it up. If `DT_*` env vars are missing, `setup_tracing()` raises `ValueError`. The fallback path (no Traceloop) manually configures a `TracerProvider` only — no metrics pipeline.
-
-**`research_assistant.py`** — initializes a LangChain `CHAT_CONVERSATIONAL_REACT_DESCRIPTION` agent with a single `wikipedia_search` tool and `ConversationBufferMemory`. The agent autonomously decides when and what to search. Two instrumented entry points wrap queries:
+**`research_assistant.py`** — LangChain agent. Initialises a `CHAT_CONVERSATIONAL_REACT_DESCRIPTION` agent with a single `wikipedia_search` tool and `ConversationBufferMemory`. The agent autonomously decides when and what to search. Two instrumented entry points wrap queries:
 - `run_agent_query()` — decorated `@task`, handles the direct agent invocation
 - `handle_research_query()` — decorated `@workflow`, wraps the full query lifecycle including a manual span with query/result attributes
 
 The `@workflow`, `@task`, and `@tool` decorators from `traceloop-sdk` become no-ops if the SDK is absent.
+
+**`tracing.py`** — sets `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta` then calls `Traceloop.init()` with `api_endpoint=`. Traceloop owns both the `TracerProvider` and `MeterProvider`; the OTel SDK prevents overriding the `MeterProvider` once set, so the metrics pipeline belongs entirely to Traceloop. The DELTA env var must be set before `Traceloop.init()` so Traceloop's internally created `OTLPMetricExporter` also picks it up. If `DT_*` env vars are missing, `setup_tracing()` raises `ValueError`. The fallback path (no Traceloop) manually configures a `TracerProvider` only — no metrics pipeline.
+
+**`public/`** — static web UI (HTML/CSS/JS). Served directly by FastAPI in development and Docker deployments. Uses `localStorage` for session persistence and calls `/api/chat` and `/api/chat/history`.
+
+**`nginx.conf`** — optional nginx configuration for production deployments requiring port 80, a custom domain, or HTTPS. When nginx is in front, it proxies `/api/` and `/health` to the FastAPI container on port 8000 and can serve `public/` directly.
 
 ## Key Design Constraints
 

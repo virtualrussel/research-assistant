@@ -281,7 +281,7 @@ def run_research_assistant():
 
     try:
         setup_tracing()
-        logger.info("Dynatrace OpenTelemetry tracing initialized")
+        logger.info("OpenTelemetry tracing initialized")
     except ValueError as e:
         logger.warning(
             f"Tracing not configured: {e}. Continuing without Dynatrace tracing."

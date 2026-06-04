@@ -9,7 +9,7 @@ A LangChain-powered research assistant that uses OpenAI and Wikipedia to researc
 - 🧠 **LLM-powered analysis** - Uses OpenAI to synthesize and summarize findings
 - 💾 **Memory** - Maintains context across research steps
 - 🔗 **Agent-based** - Uses LangChain agents to autonomously decide next steps
-- 📈 **Dynatrace AI observability** - Exports manual traces and LangChain-aware AI telemetry to Dynatrace
+- 📈 **OpenTelemetry AI observability** - Manual spans and LangChain-aware AI telemetry via OpenLLMetry/Traceloop
 
 ## How It Works
 
@@ -28,32 +28,7 @@ A LangChain-powered research assistant that uses OpenAI and Wikipedia to researc
 
 ## Setup Instructions
 
-### Option 1: GitHub Codespaces (Recommended)
-
-1. **Open in Codespaces**:
-   - Click the green `Code` button on your repository
-   - Select `Codespaces` tab
-   - Click `Create codespace on main`
-   - Wait for the environment to load (2-3 minutes)
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your OpenAI API key
-   nano .env
-   ```
-
-4. **Run the assistant**:
-   ```bash
-   python research_assistant.py
-   ```
-
-### Option 2: Local Setup
+### Option 1: Docker (Recommended)
 
 1. **Clone the repository**:
    ```bash
@@ -61,31 +36,49 @@ A LangChain-powered research assistant that uses OpenAI and Wikipedia to researc
    cd research-assistant
    ```
 
-2. **Create a virtual environment**:
+2. **Configure environment**:
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   cp .env.example .env
+   # Edit .env — OPENAI_API_KEY is required; DT_* vars enable tracing
+   nano .env
    ```
 
-3. **Install dependencies**:
+3. **Build and start**:
    ```bash
+   docker-compose up -d research-assistant
+   ```
+
+4. **Open the assistant**:
+   Navigate to `http://localhost:8000` (or your EC2 public IP on port 8000).
+
+### Option 2: Local Python
+
+1. **Clone and install**:
+   ```bash
+   git clone https://github.com/virtualrussel/research-assistant.git
+   cd research-assistant
+   python -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
    pip install -r requirements.txt
    ```
 
-4. **Set up environment variables**:
+2. **Configure environment**:
    ```bash
    cp .env.example .env
-   # Edit .env with your OpenAI API key
+   # Edit .env — OPENAI_API_KEY is required
    ```
 
-5. **Run the assistant**:
+3. **Run**:
    ```bash
-   python research_assistant.py
+   uvicorn app:app --reload
    ```
 
-## Dynatrace AI Observability Setup
+4. **Open the assistant**:
+   Navigate to `http://localhost:8000`.
 
-To enable full tracing visibility for manual application spans and LangChain / LLM execution, set the following variables in your `.env` file:
+## OpenTelemetry / AI Observability Setup
+
+Traces and LLM metrics are exported via [OpenLLMetry/Traceloop](https://github.com/traceloop/openllmetry) to any OTLP-compatible backend. To enable, set the following in your `.env` file:
 
 ```dotenv
 DT_API_URL=https://<your-env>.live.dynatrace.com/api/v2/otlp
@@ -94,10 +87,10 @@ DT_API_TOKEN=your_dynatrace_api_token_here
 
 Notes:
 
-- `DT_API_URL` should be the Dynatrace OTLP **base endpoint**.
+- `DT_API_URL` should be the OTLP **base endpoint** with no trailing slash.
 - Standard OpenTelemetry spans are exported to `DT_API_URL + /v1/traces`.
-- Traceloop / OpenLLMetry uses the base OTLP endpoint directly.
-- If Dynatrace variables are not set, the assistant continues running without tracing.
+- Traceloop / OpenLLMetry uses the base endpoint directly.
+- If these variables are not set, the assistant runs without tracing — no other functionality is affected.
 
 ## Getting an OpenAI API Key
 
@@ -119,7 +112,7 @@ The agent will then:
 2. Analyze and summarize the findings
 3. Provide a comprehensive answer with sources
 
-With Dynatrace tracing enabled, each query also emits:
+With tracing enabled, each query also emits:
 - a top-level research workflow span
 - LangChain / LLM spans captured through Traceloop
 - tool spans for Wikipedia searches
@@ -138,13 +131,22 @@ With Dynatrace tracing enabled, each query also emits:
 ```
 research-assistant/
 ├── README.md                  # This file
+├── DEPLOYMENT.md              # EC2 deployment guide
 ├── requirements.txt           # Python dependencies
 ├── .env.example               # Environment variables template
 ├── .gitignore                 # Git ignore rules
-├── .devcontainer/
-│   └── devcontainer.json      # GitHub Codespaces config
-├── research_assistant.py      # Main agent code
-└── tracing.py                 # Dynatrace / OpenTelemetry setup
+├── Dockerfile                 # Container image definition
+├── docker-compose.yml         # Compose service for the assistant
+├── nginx.conf                 # Optional nginx config (port 80 / HTTPS)
+├── public/
+│   ├── index.html             # Web UI
+│   ├── index.css              # Styles
+│   └── index.js               # Chat client
+├── app.py                     # FastAPI service + session management
+├── research_assistant.py      # LangChain agent + Wikipedia tool
+├── tracing.py                 # OpenTelemetry / Traceloop setup
+└── .devcontainer/
+    └── devcontainer.json      # GitHub Codespaces config
 ```
 
 ## Learning Resources
@@ -153,7 +155,7 @@ research-assistant/
 - [LangChain Agents](https://python.langchain.com/docs/modules/agents/)
 - [OpenAI API Documentation](https://platform.openai.com/docs)
 - [Wikipedia API](https://www.mediawiki.org/wiki/API)
-- [Dynatrace AI Observability](https://docs.dynatrace.com/docs/observe/dynatrace-for-ai-observability/get-started/openllmetry)
+- [OpenLLMetry / Traceloop](https://github.com/traceloop/openllmetry)
 
 ## Troubleshooting
 
