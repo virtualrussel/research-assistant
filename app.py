@@ -19,8 +19,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pythonjsonlogger import jsonlogger
-from opentelemetry import context as otel_context, trace
-from opentelemetry.propagate import extract
+from opentelemetry import trace
+from opentelemetry.trace import Link, TraceFlags
 
 # ============================================================================
 # Logging Configuration
@@ -186,24 +186,6 @@ async def shutdown():
 # ============================================================================
 
 @app.middleware("http")
-async def extract_trace_context(request: Request, call_next):
-    """Extract W3C trace context from incoming request headers (e.g., from OneAgent via nginx).
-
-    When OneAgent injects traceparent headers into HTTP requests, this middleware extracts
-    the parent trace context and sets it as the current context, so all spans created during
-    request processing are children of that parent span, enabling proper trace linking from
-    nginx → FastAPI → Traceloop → LangChain → OpenAI.
-    """
-    extracted_context = extract(request.headers)
-    token = otel_context.attach(extracted_context)
-    try:
-        response = await call_next(request)
-        return response
-    finally:
-        otel_context.detach(token)
-
-
-@app.middleware("http")
 async def log_request_context(request: Request, call_next):
     """Log HTTP request/response with trace context; track in-flight count."""
     global active_requests
@@ -333,10 +315,14 @@ async def chat(request: Request, request_body: ChatRequest):
 
             # handle_research_query is synchronous (LangChain/OpenAI); offload
             # to a thread so the event loop remains free for other requests.
+            # Pass the HTTP parent traceparent header (from OneAgent via nginx)
+            # so Traceloop can create a link back to the HTTP span.
+            parent_traceparent = request.headers.get("traceparent")
             result = await asyncio.to_thread(
                 handle_research_query,
                 session["agent"],
                 request_body.message,
+                parent_traceparent,
             )
 
             logger.debug(

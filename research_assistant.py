@@ -16,8 +16,10 @@ Key LangChain Concepts Demonstrated:
 - Chains: Multi-step processing
 """
 
+import contextvars
 import logging
 import os
+import re
 
 import wikipedia
 from dotenv import load_dotenv
@@ -26,6 +28,7 @@ from langchain.memory import ConversationBufferMemory
 from langchain.tools import Tool
 from langchain_openai import ChatOpenAI
 from opentelemetry import trace
+from opentelemetry.trace import Link, SpanContext, TraceFlags, TraceState
 from opentelemetry.trace.status import Status, StatusCode
 
 from tracing import setup_tracing
@@ -232,20 +235,86 @@ def run_agent_query(agent, user_query: str) -> str:
     return agent.run(user_query)
 
 
+def _parse_traceparent_to_link(traceparent: str):
+    """
+    Parse W3C traceparent header and return a Link to the parent span.
+
+    Format: version-trace_id-parent_id-trace_flags
+    Example: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+
+    Args:
+        traceparent: W3C traceparent header value
+
+    Returns:
+        Link object to parent span, or None if parsing fails
+    """
+    try:
+        parts = traceparent.split("-")
+        if len(parts) != 4:
+            logger.warning(f"Invalid traceparent format: {traceparent}")
+            return None
+
+        version, trace_id, parent_id, trace_flags = parts
+
+        # Validate format (version and IDs are hex, flags are 2 hex digits)
+        if not re.match(r"^[0-9a-f]{2}$", version):
+            return None
+        if not re.match(r"^[0-9a-f]{32}$", trace_id):
+            return None
+        if not re.match(r"^[0-9a-f]{16}$", parent_id):
+            return None
+        if not re.match(r"^[0-9a-f]{2}$", trace_flags):
+            return None
+
+        # Create SpanContext for the parent HTTP span
+        parent_context = SpanContext(
+            trace_id=int(trace_id, 16),
+            span_id=int(parent_id, 16),
+            is_remote=True,
+            trace_flags=TraceFlags(int(trace_flags, 16)),
+            trace_state=TraceState(),
+        )
+
+        # Create a link to the parent HTTP span
+        return Link(context=parent_context)
+
+    except Exception as e:
+        logger.warning(f"Failed to parse traceparent header: {e}")
+        return None
+
+
 @workflow(name="research_query_workflow")
-def handle_research_query(agent, user_query: str) -> str:
+def handle_research_query(agent, user_query: str, parent_traceparent: str = None) -> str:
     """
     Trace and execute a single research query workflow.
+
+    Creates a link to the HTTP parent span (if available), enabling Dynatrace to
+    correlate the Traceloop trace with the HTTP trace even though they're separate traces.
 
     Args:
         agent: LangChain agent instance
         user_query: User's research query
+        parent_traceparent: W3C traceparent header from HTTP request (e.g., from OneAgent via nginx)
 
     Returns:
         str: Agent's response
     """
     tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span("research_assistant.query") as span:
+
+    # Create links to parent span if traceparent header was provided
+    links = None
+    if parent_traceparent:
+        parent_link = _parse_traceparent_to_link(parent_traceparent)
+        if parent_link:
+            links = [parent_link]
+            logger.debug(f"Created link to HTTP parent span from traceparent: {parent_traceparent}")
+
+    # Start the workflow span with links to parent
+    span_kwargs = {"name": "research_assistant.query"}
+    if links:
+        span_kwargs["links"] = links
+
+    with tracer.start_as_current_span(**span_kwargs) as span:
         span.set_attribute("research.query", user_query)
         span.set_attribute(
             "research.model",
@@ -310,7 +379,7 @@ def run_research_assistant():
             print("\n\U0001f914 Researching...\n")
 
             try:
-                result = handle_research_query(agent, user_query)
+                result = handle_research_query(agent, user_query, parent_traceparent=None)
 
                 print("\n" + "-" * 70)
                 print("\U0001f4ca Research Results:")
