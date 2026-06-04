@@ -21,34 +21,41 @@ A LangChain-powered research assistant that uses OpenAI and Wikipedia to researc
 
 ## Prerequisites
 
-- Python 3.9+
 - OpenAI API key
+- Docker and Docker Compose (for Option 1)
+- Python 3.9+ (for Option 2)
 - Optional: Dynatrace OTLP endpoint and API token for tracing
-- GitHub Codespaces (or local environment with Python installed)
 
 ## Setup Instructions
 
 ### Option 1: Docker (Recommended)
 
-1. **Clone the repository**:
+1. **Install Docker and Docker Compose** (Ubuntu):
+   ```bash
+   sudo apt update && sudo apt install -y docker.io docker-compose
+   sudo usermod -aG docker $USER
+   newgrp docker
+   ```
+
+2. **Clone the repository**:
    ```bash
    git clone https://github.com/virtualrussel/research-assistant.git
    cd research-assistant
    ```
 
-2. **Configure environment**:
+3. **Configure environment**:
    ```bash
    cp .env.example .env
    # Edit .env — OPENAI_API_KEY is required; DT_* vars enable tracing
    nano .env
    ```
 
-3. **Build and start**:
+4. **Build and start**:
    ```bash
    docker-compose up -d research-assistant
    ```
 
-4. **Open the assistant**:
+5. **Open the assistant**:
    Navigate to `http://localhost:8000` (or your EC2 public IP on port 8000).
 
 ### Option 2: Local Python
