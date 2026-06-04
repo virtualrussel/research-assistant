@@ -20,3 +20,22 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  oneagent:
+    image: dynatrace/oneagent:latest
+    container_name: oneagent
+    restart: unless-stopped
+    privileged: true
+    pid: "host"
+    env_file: .env
+    environment:
+      DT_API_URL: ${DT_API_URL}
+      DT_API_TOKEN: ${DT_API_TOKEN}
+    volumes:
+      - /:/mnt/root
+      - /var/run/docker.sock:/var/run/docker.sock
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
