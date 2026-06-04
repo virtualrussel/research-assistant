@@ -31,6 +31,8 @@ docker-compose up -d research-assistant
 
 If the container no longer exists (already removed by a failed recreate), skip the first command. If docker rm fails with a hash-named container (e.g. `dcdf01325951_research-assistant`), use that full name in the `docker rm` command.
 
+**Trace linking: OneAgent HTTP spans and Traceloop LangChain spans remain separate** — OneAgent (via nginx) and Traceloop use independent `TracerProvider` instances that do not share trace context. Even though W3C `traceparent` headers are propagated from nginx → FastAPI, Traceloop does not read this context when initializing its root span. The result: HTTP requests appear as one trace (nginx → FastAPI), while LangChain work appears as a separate, unlinked trace. Both traces are valid and exportable to Dynatrace, but they cannot be traversed as a single end-to-end flow. Root cause: Traceloop initializes its `TracerProvider` at application startup, before the first request, and does not accept a parent context parameter. Workaround: none implemented. Future: would require either Traceloop API changes to accept parent context at init time, or a custom span link mechanism between the two traces.
+
 ## Architecture
 
 **`app.py`** — FastAPI service. Handles HTTP requests, session management, and request logging with trace context. On startup, initialises tracing then starts a background session cleanup task. Serves the web UI from `public/` via a StaticFiles mount at `/` (added last so API routes take precedence). Offloads synchronous LangChain calls to a thread pool via `asyncio.to_thread`.
