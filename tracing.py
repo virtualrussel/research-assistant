@@ -16,6 +16,10 @@ import os
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.propagators.composite import CompositePropagator
+from opentelemetry.propagators.jaeger_baggage import JaegerBaggagePropagator
+from opentelemetry.propagators.w3c_trace_context import W3CTraceContextPropagator
+from opentelemetry.propagate import set_global_textmap
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -28,6 +32,14 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 _TRACING_INITIALIZED = False
+
+# Configure global propagators for W3C trace context extraction from HTTP headers.
+# This must happen before tracing is initialized so that incoming traceparent headers
+# from OneAgent (via nginx) are extracted and used as parent context for all spans.
+set_global_textmap(CompositePropagator([
+    W3CTraceContextPropagator(),
+    JaegerBaggagePropagator(),
+]))
 
 
 def setup_tracing(service_name: str = "research-assistant") -> None:
