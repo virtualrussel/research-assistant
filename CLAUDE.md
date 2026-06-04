@@ -11,14 +11,25 @@ OpenTelemetry (manual spans) and OpenLLMetry/Traceloop (automatic LangChain and 
 ## Setup
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env  # then populate OPENAI_API_KEY at minimum
-python research_assistant.py
+cp .env.example .env  # populate OPENAI_API_KEY at minimum
+docker-compose up -d research-assistant
+# UI available at http://localhost:8000
 ```
 
 Required env var: `OPENAI_API_KEY`. Optional: `OPENAI_MODEL` (default `gpt-3.5-turbo`), `LOG_LEVEL`. For Dynatrace observability: `DT_API_URL` (base OTLP endpoint, no trailing slash) and `DT_API_TOKEN` (must have both `openTelemetryTrace.ingest` and `metrics.ingest` scopes).
 
 There is no build step, no test suite, and no linter config. The devcontainer uses `black` for formatting.
+
+## Known Issues
+
+**docker-compose 1.29.2 `ContainerConfig` crash** — when trying to recreate a container built from a newer image format, docker-compose 1.29.2 throws `KeyError: 'ContainerConfig'`. Workaround: remove the container by ID or name first, then run `docker-compose up`:
+
+```bash
+docker stop research-assistant && docker rm research-assistant
+docker-compose up -d research-assistant
+```
+
+If the container no longer exists (already removed by a failed recreate), skip the first command. If docker rm fails with a hash-named container (e.g. `dcdf01325951_research-assistant`), use that full name in the `docker rm` command.
 
 ## Architecture
 
