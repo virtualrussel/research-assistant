@@ -27,13 +27,19 @@ services:
     restart: unless-stopped
     privileged: true
     pid: "host"
+    network_mode: host
+    read_only: true
+    security_opt:
+      - apparmor:unconfined
     env_file: .env
     environment:
-      DT_API_URL: ${DT_API_URL}
-      DT_API_TOKEN: ${DT_API_TOKEN}
+      ONEAGENT_INSTALLER_SCRIPT_URL: ${ONEAGENT_INSTALLER_SCRIPT_URL}
+      ONEAGENT_INSTALLER_DOWNLOAD_TOKEN: ${ONEAGENT_INSTALLER_DOWNLOAD_TOKEN}
+      ONEAGENT_ENABLE_VOLUME_STORAGE: "true"
     volumes:
       - /:/mnt/root
       - /var/run/docker.sock:/var/run/docker.sock
+      - /var/opt/dynatrace:/mnt/volume_storage_mount
     logging:
       driver: "json-file"
       options:
